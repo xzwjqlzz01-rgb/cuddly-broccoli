@@ -34,7 +34,27 @@
 
 # \## 快速开始
 
-# ```bash
+# \## 环境变量配置（必读）
+
+# 
+
+# 本项目使用智谱AI的API，需要先获取免费的 API Key。
+
+# 
+
+# 1\. 访问 \[智谱AI开放平台](https://bigmodel.cn) 注册账号。
+
+# 2\. 登录后进入 \[控制台 → API Keys](https://bigmodel.cn/usercenter/proj-mgmt/apikeys)，点击“创建新密钥”，复制生成的 Key（格式类似 `xxxxxx.xxxxxxxx`）。
+
+# 3\. 在运行后端之前，设置环境变量：
+
+# 
+
+# &#x20;  \*\*Windows (PowerShell):\*\*
+
+# &#x20;  ```powershell
+
+# &#x20;  $env:ZHIPUAI\_API\_KEY="你的API Key"
 
 # \# 克隆仓库
 
