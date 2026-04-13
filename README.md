@@ -2,7 +2,7 @@
 
 # 
 
-# 基于 FastAPI + LlamaIndex + 智谱 AI 的智能阅读工具，上传 PDF 即可获得结构化分析报告（元问题、概念还原、极致批判、实践指导、内化计划），并支持连续多轮对话追问。
+# 基于 FastAPI + LlamaIndex + 智谱 AI 的智能阅读工具，上传 PDF 即可获得结构化分析报告（元问题、概念还原、极致批判、实践指导、内化计划），并支持连续多轮对话追问，并支持苏格拉底式辩论与联网搜索。
 
 # 
 
@@ -18,17 +18,20 @@
 
 # \- 🧠 内化：21天复习计划、模型类比、费曼解释
 
-# \- 💬 多轮对话历史：可连续追问，保留完整交流记录
+# \- 💬 双模式对话：
+  - 普通模式：基于报告+原文回答，支持联网搜索
+  - 辩论模式：苏格拉底式质疑，与你进行思想交锋
 
 # 
 
 # \## 技术栈
 
-# \- 后端：FastAPI + Uvicorn + LlamaIndex + 智谱 AI (glm-4-flash + embedding-2)
-
-# \- 前端：Streamlit
-
-# \- OCR：Tesseract + pdf2image + Poppler
+| 后端框架 | FastAPI + Uvicorn |
+| AI 框架 | LlamaIndex |
+| 大模型 | 智谱 AI (glm-4-flash + embedding-2) |
+| 前端 | Streamlit |
+| OCR | Tesseract + pdf2image + Poppler |
+| 搜索 | DuckDuckGo Search (ddgs) |
 
 # 
 
