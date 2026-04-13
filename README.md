@@ -97,3 +97,6 @@
 
 # streamlit run app.py
 
+## 🎥 演示视频
+
+[点击观看完整演示](https://b23.tv/sLKPjHw)
