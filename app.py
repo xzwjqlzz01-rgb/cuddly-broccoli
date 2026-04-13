@@ -42,8 +42,8 @@ if st.session_state.analyzed and st.session_state.report:
         st.markdown(report["practice"])
     with st.expander("🧠 内化ing", expanded=True):
         st.markdown(report["internalize"])
-    
-    st.subheader("💬 追问 （对话历史）")
+
+    st.subheader("💬 追问 AI（对话历史）")
     
     # 显示历史消息
     for msg in st.session_state.messages:
@@ -53,18 +53,21 @@ if st.session_state.analyzed and st.session_state.report:
             st.markdown(f"**AI：** {msg['content']}")
         st.divider()
     
-    # 输入新问题
+    # 模式选择
+    mode = st.radio("选择对话模式：", ("普通问答（支持联网搜索）", "辩论模式（苏格拉底式质疑）"), horizontal=True)
+    debate_mode = (mode == "辩论模式（苏格拉底式质疑）")
+    
     question = st.text_input("输入你的问题", key="question_input")
     if st.button("提问") and question:
         with st.spinner("思考中..."):
-            # 调用后端问答接口
-            qr = requests.post(f"http://localhost:8000/ask_agent?question={question}")
+            # 调用后端时传递 mode 参数
+            url = f"http://localhost:8000/ask_agent?question={question}&mode={'debate' if debate_mode else 'normal'}"
+            qr = requests.post(url)
             if qr.status_code == 200:
                 answer = qr.json()["answer"]
-                # 将用户问题和AI回答添加到历史
                 st.session_state.messages.append({"role": "user", "content": question})
                 st.session_state.messages.append({"role": "assistant", "content": answer})
-                # 清空输入框（通过重新运行刷新）
                 st.rerun()
             else:
                 st.error("提问失败")
+    

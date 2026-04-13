@@ -7,20 +7,7 @@ from agent_modules import generate_full_report
 import pytesseract
 from pdf2image import convert_from_path
 from pypdf import PdfReader
-# 新增：用于联网搜索的工具函数
-from duckduckgo_search import DDGS
-
-def search_web(query: str, max_results: int = 3) -> str:
-    """使用 DuckDuckGo 搜索网页，返回摘要"""
-    try:
-        with DDGS() as ddgs:
-            results = list(ddgs.text(query, max_results=max_results))
-            if not results:
-                return "未找到相关结果。"
-            snippets = [f"{r['title']}: {r['body']}" for r in results]
-            return "\n\n".join(snippets)
-    except Exception as e:
-        return f"搜索失败：{str(e)}"
+from ddgs import DDGS  # 使用新的 ddgs 库
 
 app = FastAPI()
 app.add_middleware(CORSMiddleware, allow_origins=["*"])
@@ -30,7 +17,6 @@ pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tessera
 poppler_path = r'D:\poppler\bin'
 
 def extract_text_from_pdf(pdf_path: str) -> str:
-    """提取PDF文本，必要时OCR"""
     try:
         reader = PdfReader(pdf_path)
         text = ""
@@ -50,9 +36,23 @@ def extract_text_from_pdf(pdf_path: str) -> str:
         full_text += page_text + "\n"
     return full_text
 
-# 存储最后一次分析的文本和报告（用于问答）
+# 存储最后一次分析的文本和报告
 last_text = ""
 last_report = None
+
+# 联网搜索工具函数（供 Agent 使用）
+def search_web(query: str, max_results: int = 3) -> str:
+    try:
+        with DDGS() as ddgs:
+            results = list(ddgs.text(query, max_results=max_results))
+            if not results:
+                return "未找到相关结果。"
+            output = ""
+            for r in results:
+                output += f"- {r['title']}: {r['body']}\n"
+            return output
+    except Exception as e:
+        return f"搜索失败：{str(e)}"
 
 @app.post("/analyze")
 async def analyze_book(file: UploadFile = File(...)):
@@ -69,59 +69,105 @@ async def analyze_book(file: UploadFile = File(...)):
     return {"report": report}
 
 @app.post("/ask_agent")
-async def ask_agent(question: str):
+async def ask_agent(question: str, mode: str = "normal"):
     if not last_text or not last_report:
         return {"answer": "请先上传书籍并分析（调用 /analyze）"}
     from zhipuai import ZhipuAI
     client = ZhipuAI(api_key=os.getenv("ZHIPUAI_API_KEY"))
     
-    # ========== 第一步：判断是否需要搜索 ==========
-    # 使用一个轻量级调用，让模型判断问题是否需要实时/外部知识
-    judge_prompt = f"""你是一个助手。判断用户的问题是否需要查阅最新的外部信息（如新闻、百科、实时数据）才能给出满意的回答。如果问题仅依赖书籍本身内容或通用常识，则不需要搜索。
-用户问题：{question}
-只需要回答“需要”或“不需要”，不要有其他内容。"""
-    judge_response = client.chat.completions.create(
-        model="glm-4-flash",
-        messages=[{"role": "user", "content": judge_prompt}],
-        max_tokens=10,
-        temperature=0
-    )
-    need_search = judge_response.choices[0].message.content.strip() == "需要"
+    # 根据模式选择不同的系统提示
+    if mode == "debate":
+        system_prompt = """你是一个擅长苏格拉底式质疑的辩论对手。你的任务是：
+1. 对用户提出的观点或书中的结论，进行尖锐反驳。
+2. 指出逻辑漏洞、隐藏假设、反例。
+3. 用反问引导用户深入思考。
+4. 不要轻易同意用户，要持续追问。
+语气可以犀利，但保持建设性。"""
+        # 辩论模式下温度稍高，更有创造性
+        temperature = 0.7
+    else:
+        system_prompt = """你是一个温和的读书助手，基于分析报告和原文回答问题。如果用户需要实时信息（如天气、新闻、作者最新动态等），请使用联网搜索工具。"""
+        temperature = 0.5
     
-    search_results = ""
-    if need_search:
-        # 调用搜索工具（需要先定义 search_web 函数）
-        # 提取搜索关键词：让模型提取核心关键词
-        keyword_prompt = f"""用户问题：{question}
-请提取最适合搜索的关键词（2-5个词），只输出关键词，不要其他内容。"""
-        kw_response = client.chat.completions.create(
-            model="glm-4-flash",
-            messages=[{"role": "user", "content": keyword_prompt}],
-            max_tokens=20,
-            temperature=0
-        )
-        query = kw_response.choices[0].message.content.strip()
-        search_results = search_web(query)
-        search_results = f"\n\n===== 实时搜索补充 =====\n{search_results}\n"
-    
-    # ========== 第二步：构造最终 prompt（原有内容 + 可选搜索结果） ==========
-    prompt = f"""你是一个擅长苏格拉底式质疑的AI。用户对一本书提出了问题。以下是这本书的分析报告摘要和原文片段。请结合这些信息回答用户。如果用户提出质疑，请引用报告中的“极致批判”模块内容进行反驳或深化。
-
-用户问题：{question}
+    # 构造消息（普通模式下加入搜索工具定义）
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": f"""用户问题：{question}
 
 ===== 分析报告摘要 =====
-{last_report.get('insight', '')[:2000]}
-{last_report.get('critique', '')[:2000]}
+{last_report.get('insight', '')[:1500]}
+{last_report.get('critique', '')[:1500]}
 
-===== 原文片段（前2000字符）=====
-{last_text[:2000]}
-{search_results}
-请回答（要求：直接回应问题，可引用报告中的分析，语气可略带质疑但保持建设性）：
-"""
-    response = client.chat.completions.create(
-        model="glm-4-flash",
-        messages=[{"role": "user", "content": prompt}],
-        max_tokens=1000,
-        temperature=0.5
-    )
-    return {"answer": response.choices[0].message.content}
+===== 原文片段（前1500字符）=====
+{last_text[:1500]}
+
+请回答："""}
+    ]
+    
+    # 普通模式下，增加工具调用能力（联网搜索）
+    if mode != "debate":
+        tools = [
+            {
+                "type": "function",
+                "function": {
+                    "name": "search_web",
+                    "description": "当用户需要实时信息、新闻、天气、百科等外部知识时，调用此工具搜索网络。",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "query": {
+                                "type": "string",
+                                "description": "搜索关键词"
+                            }
+                        },
+                        "required": ["query"]
+                    }
+                }
+            }
+        ]
+        # 第一轮：让模型决定是否调用工具
+        response = client.chat.completions.create(
+            model="glm-4-flash",
+            messages=messages,
+            tools=tools,
+            tool_choice="auto",
+            max_tokens=1000,
+            temperature=temperature
+        )
+        # 检查是否有工具调用请求
+        if response.choices[0].message.tool_calls:
+            tool_call = response.choices[0].message.tool_calls[0]
+            tool_name = tool_call.function.name
+            import json
+            tool_args = json.loads(tool_call.function.arguments)
+            if tool_name == "search_web":
+                search_result = search_web(tool_args.get("query"))
+                # 将工具结果添加到对话中
+                messages.append(response.choices[0].message)
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": tool_call.id,
+                    "content": search_result
+                })
+                final_response = client.chat.completions.create(
+                    model="glm-4-flash",
+                    messages=messages,
+                    max_tokens=1000,
+                    temperature=temperature
+                )
+                answer = final_response.choices[0].message.content
+            else:
+                answer = "未知工具调用"
+        else:
+            answer = response.choices[0].message.content
+    else:
+        # 辩论模式：不调用工具，直接生成反驳
+        response = client.chat.completions.create(
+            model="glm-4-flash",
+            messages=messages,
+            max_tokens=1000,
+            temperature=temperature
+        )
+        answer = response.choices[0].message.content
+    
+    return {"answer": answer}
